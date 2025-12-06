@@ -639,6 +639,44 @@
             updateGoldGramTable();
         }
 
+        // Fetch prices from backup API (metals.dev)
+        async function fetchPricesFromBackup() {
+            const url = 'https://api.metals.dev/v1/latest?api_key=QRJDF0IFCBRQLOPNVDB8701PNVDB8&currency=USD&unit=toz';
+            
+            const response = await fetch(url, {
+                headers: {
+                    'Accept': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error(`Backup API error: ${response.status}`);
+            }
+
+            const result = await response.json();
+            console.log('Backup API response:', result);
+            
+            // Parse metals.dev response format
+            let silverPrice = 0;
+            let goldPrice = 0;
+            
+            // metals.dev typically returns data in a 'metals' object with XAG and XAU
+            if (result.metals) {
+                if (result.metals.XAG) {
+                    silverPrice = parseFloat(result.metals.XAG);
+                }
+                if (result.metals.XAU) {
+                    goldPrice = parseFloat(result.metals.XAU);
+                }
+            } else if (result.XAG && result.XAU) {
+                // Alternative format - direct properties
+                silverPrice = parseFloat(result.XAG);
+                goldPrice = parseFloat(result.XAU);
+            }
+            
+            return { silverPrice, goldPrice };
+        }
+
         // Fetch prices from API
         async function fetchPrices() {
             const statusEl = document.getElementById('refresh-status');
@@ -648,66 +686,79 @@
             try {
                 let silverPrice = 0;
                 let goldPrice = 0;
+                let usedBackup = false;
 
-                // Use goldapi.io API with API key
-                const apiKey = 'goldapi-hplx19mitbzx73-io';
-                const headers = new Headers();
-                headers.append('x-access-token', apiKey);
-                headers.append('Content-Type', 'application/json');
+                // Try main API first (goldapi.io)
+                try {
+                    const apiKey = 'goldapi-hplx19mitbzx73-io';
+                    const headers = new Headers();
+                    headers.append('x-access-token', apiKey);
+                    headers.append('Content-Type', 'application/json');
 
-                const requestOptions = {
-                    method: 'GET',
-                    headers: headers,
-                    redirect: 'follow'
-                };
+                    const requestOptions = {
+                        method: 'GET',
+                        headers: headers,
+                        redirect: 'follow'
+                    };
 
-                // Fetch both silver (XAG) and gold (XAU) prices in parallel
-                console.log('Fetching prices from goldapi.io...');
-                const [silverRes, goldRes] = await Promise.all([
-                    fetch('https://www.goldapi.io/api/XAG/USD', requestOptions),
-                    fetch('https://www.goldapi.io/api/XAU/USD', requestOptions)
-                ]);
+                    // Fetch both silver (XAG) and gold (XAU) prices in parallel
+                    console.log('Fetching prices from goldapi.io...');
+                    const [silverRes, goldRes] = await Promise.all([
+                        fetch('https://www.goldapi.io/api/XAG/USD', requestOptions),
+                        fetch('https://www.goldapi.io/api/XAU/USD', requestOptions)
+                    ]);
 
-                // Parse silver response
-                if (silverRes.ok) {
-                    const silverData = await silverRes.json();
-                    console.log('Silver API response:', silverData);
-                    // goldapi.io returns price in the 'price' field
-                    if (silverData.price) {
-                        silverPrice = parseFloat(silverData.price);
-                    } else if (silverData.rate) {
-                        silverPrice = parseFloat(silverData.rate);
+                    // Parse silver response
+                    if (silverRes.ok) {
+                        const silverData = await silverRes.json();
+                        console.log('Silver API response:', silverData);
+                        if (silverData.price) {
+                            silverPrice = parseFloat(silverData.price);
+                        } else if (silverData.rate) {
+                            silverPrice = parseFloat(silverData.rate);
+                        }
+                    } else {
+                        console.error('Silver API error:', silverRes.status, silverRes.statusText);
+                        if (silverRes.status === 403) {
+                            throw new Error('Main API quota exceeded, trying backup...');
+                        }
                     }
-                } else {
-                    console.error('Silver API error:', silverRes.status, silverRes.statusText);
-                    const errorText = await silverRes.text();
-                    console.error('Error details:', errorText);
-                    if (silverRes.status === 403) {
-                        throw new Error('API quota exceeded. Please wait before refreshing.');
-                    }
-                }
 
-                // Parse gold response
-                if (goldRes.ok) {
-                    const goldData = await goldRes.json();
-                    console.log('Gold API response:', goldData);
-                    if (goldData.price) {
-                        goldPrice = parseFloat(goldData.price);
-                    } else if (goldData.rate) {
-                        goldPrice = parseFloat(goldData.rate);
+                    // Parse gold response
+                    if (goldRes.ok) {
+                        const goldData = await goldRes.json();
+                        console.log('Gold API response:', goldData);
+                        if (goldData.price) {
+                            goldPrice = parseFloat(goldData.price);
+                        } else if (goldData.rate) {
+                            goldPrice = parseFloat(goldData.rate);
+                        }
+                    } else {
+                        console.error('Gold API error:', goldRes.status, goldRes.statusText);
+                        if (goldRes.status === 403) {
+                            throw new Error('Main API quota exceeded, trying backup...');
+                        }
                     }
-                } else {
-                    console.error('Gold API error:', goldRes.status, goldRes.statusText);
-                    const errorText = await goldRes.text();
-                    console.error('Error details:', errorText);
-                    if (goldRes.status === 403) {
-                        throw new Error('API quota exceeded. Please wait before refreshing.');
+
+                    // Check if we got valid data from main API
+                    if (silverPrice > 0 && goldPrice > 0) {
+                        console.log('Successfully fetched from main API');
+                    } else {
+                        throw new Error('Main API returned invalid data, trying backup...');
                     }
+                } catch (mainApiError) {
+                    // Main API failed, try backup
+                    console.log('Main API failed, trying backup API...', mainApiError);
+                    statusEl.textContent = 'Trying backup API...';
+                    
+                    const backupData = await fetchPricesFromBackup();
+                    silverPrice = backupData.silverPrice;
+                    goldPrice = backupData.goldPrice;
+                    usedBackup = true;
                 }
 
                 console.log('Final prices - Silver:', silverPrice, 'Gold:', goldPrice);
 
-                // NO FALLBACK PRICES - Only use real fetched data
                 // Final validation - must have valid prices from API
                 if (silverPrice > 0 && silverPrice < 100 && goldPrice > 0 && goldPrice < 10000) {
                     silverSpot = silverPrice;
@@ -722,8 +773,13 @@
                     updateSpotDisplays();
                     updateAllTables();
                     
-                    statusEl.textContent = '✓ Updated';
-                    statusEl.style.color = '#4ade80';
+                    if (usedBackup) {
+                        statusEl.textContent = '✓ Updated (backup API)';
+                        statusEl.style.color = '#ffa500';
+                    } else {
+                        statusEl.textContent = '✓ Updated';
+                        statusEl.style.color = '#4ade80';
+                    }
                     setTimeout(() => {
                         statusEl.textContent = '';
                     }, 2000);
