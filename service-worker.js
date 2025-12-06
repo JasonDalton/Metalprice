@@ -1,5 +1,5 @@
 // Service Worker for Metal Prices PWA
-const CACHE_NAME = 'metal-prices-v1';
+const CACHE_NAME = 'metal-prices-v2';
 
 // Get the base path from the service worker's scope
 const getBasePath = () => {
@@ -29,7 +29,7 @@ self.addEventListener('install', (event) => {
 // Fetch event - serve from cache, fallback to network
 self.addEventListener('fetch', (event) => {
   // Skip caching for external API requests - always fetch fresh data
-  if (event.request.url.includes('goldapi.io') || event.request.url.includes('metals.dev')) {
+  if (event.request.url.includes('metals.dev')) {
     return fetch(event.request);
   }
   

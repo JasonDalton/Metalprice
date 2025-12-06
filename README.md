@@ -33,7 +33,7 @@ Or use an online icon generator like:
 
 ## Features
 
-- Live spot prices from goldapi.io
+- Live spot prices from MetalINT (metals.dev)
 - Silver and gold reference tables
 - Fractional sizes (troy oz and grams)
 - Constitutional silver (90% pre-1965)

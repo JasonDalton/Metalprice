@@ -657,74 +657,32 @@
             console.log('MetalINT API response:', result);
             
             // Parse metals.dev response format
+            // metals.dev returns: { metals: { gold: 1929.15, silver: 22.99, ... }, ... }
             let silverPrice = 0;
             let goldPrice = 0;
             
-            // metals.dev typically returns data in a 'metals' object with XAG and XAU
             if (result.metals) {
-                if (result.metals.XAG) {
-                    silverPrice = parseFloat(result.metals.XAG);
+                // metals.dev uses 'silver' and 'gold' (not XAG/XAU)
+                if (result.metals.silver !== undefined && result.metals.silver !== null) {
+                    silverPrice = parseFloat(result.metals.silver);
                 }
-                if (result.metals.XAU) {
-                    goldPrice = parseFloat(result.metals.XAU);
+                if (result.metals.gold !== undefined && result.metals.gold !== null) {
+                    goldPrice = parseFloat(result.metals.gold);
                 }
-            } else if (result.XAG && result.XAU) {
-                // Alternative format - direct properties
-                silverPrice = parseFloat(result.XAG);
-                goldPrice = parseFloat(result.XAU);
+            }
+            
+            console.log('Parsed prices - Silver:', silverPrice, 'Gold:', goldPrice);
+            console.log('Raw metals object:', result.metals);
+            
+            if (isNaN(silverPrice) || isNaN(goldPrice) || silverPrice <= 0 || goldPrice <= 0) {
+                console.error('Failed to parse prices. Silver:', silverPrice, 'Gold:', goldPrice);
+                console.error('Full response:', result);
+                throw new Error(`Failed to parse prices from API response. Silver: ${silverPrice}, Gold: ${goldPrice}`);
             }
             
             return { silverPrice, goldPrice };
         }
 
-        // Fetch prices from backup API (goldapi.io)
-        async function fetchPricesFromBackup() {
-            const apiKey = 'goldapi-hplx19mitbzx73-io';
-            const headers = new Headers();
-            headers.append('x-access-token', apiKey);
-            headers.append('Content-Type', 'application/json');
-
-            const requestOptions = {
-                method: 'GET',
-                headers: headers,
-                redirect: 'follow'
-            };
-
-            // Fetch both silver (XAG) and gold (XAU) prices in parallel
-            const [silverRes, goldRes] = await Promise.all([
-                fetch('https://www.goldapi.io/api/XAG/USD', requestOptions),
-                fetch('https://www.goldapi.io/api/XAU/USD', requestOptions)
-            ]);
-
-            let silverPrice = 0;
-            let goldPrice = 0;
-
-            // Parse silver response
-            if (silverRes.ok) {
-                const silverData = await silverRes.json();
-                if (silverData.price) {
-                    silverPrice = parseFloat(silverData.price);
-                } else if (silverData.rate) {
-                    silverPrice = parseFloat(silverData.rate);
-                }
-            } else {
-                throw new Error(`Backup API silver error: ${silverRes.status}`);
-            }
-
-            // Parse gold response
-            if (goldRes.ok) {
-                const goldData = await goldRes.json();
-                if (goldData.price) {
-                    goldPrice = parseFloat(goldData.price);
-                } else if (goldData.rate) {
-                    goldPrice = parseFloat(goldData.rate);
-                }
-            } else {
-                throw new Error(`Backup API gold error: ${goldRes.status}`);
-            }
-
-            return { silverPrice, goldPrice };
-        }
 
         // Fetch prices from API
         async function fetchPrices() {
@@ -733,38 +691,16 @@
             statusEl.style.color = '#888';
 
             try {
-                let silverPrice = 0;
-                let goldPrice = 0;
-                let usedBackup = false;
-
-                // Try main API first (MetalINT/metals.dev)
-                try {
-                    console.log('Fetching prices from MetalINT...');
-                    const mainData = await fetchPricesFromMetalINT();
-                    silverPrice = mainData.silverPrice;
-                    goldPrice = mainData.goldPrice;
+                // Fetch from MetalINT only
+                console.log('Fetching prices from MetalINT...');
+                const data = await fetchPricesFromMetalINT();
+                const silverPrice = data.silverPrice;
+                const goldPrice = data.goldPrice;
+                
+                // Validate data (silver typically 15-50, gold typically 1500-3000, but allow wider range)
+                if (silverPrice > 0 && silverPrice < 200 && goldPrice > 0 && goldPrice < 50000) {
+                    console.log('Successfully fetched from MetalINT - Silver:', silverPrice, 'Gold:', goldPrice);
                     
-                    // Check if we got valid data from main API
-                    if (silverPrice > 0 && goldPrice > 0) {
-                        console.log('Successfully fetched from MetalINT');
-                    } else {
-                        throw new Error('MetalINT returned invalid data, trying backup...');
-                    }
-                } catch (mainApiError) {
-                    // Main API failed, try backup
-                    console.log('MetalINT failed, trying backup API...', mainApiError);
-                    statusEl.textContent = 'Trying backup API...';
-                    
-                    const backupData = await fetchPricesFromBackup();
-                    silverPrice = backupData.silverPrice;
-                    goldPrice = backupData.goldPrice;
-                    usedBackup = true;
-                }
-
-                console.log('Final prices - Silver:', silverPrice, 'Gold:', goldPrice);
-
-                // Final validation - must have valid prices from API
-                if (silverPrice > 0 && silverPrice < 100 && goldPrice > 0 && goldPrice < 10000) {
                     silverSpot = silverPrice;
                     goldSpot = goldPrice;
                     lastUpdate = new Date();
@@ -777,18 +713,13 @@
                     updateSpotDisplays();
                     updateAllTables();
                     
-                    if (usedBackup) {
-                        statusEl.textContent = '✓ Updated (backup)';
-                        statusEl.style.color = '#ffa500';
-                    } else {
-                        statusEl.textContent = '✓ Updated';
-                        statusEl.style.color = '#4ade80';
-                    }
+                    statusEl.textContent = '✓ Updated';
+                    statusEl.style.color = '#4ade80';
                     setTimeout(() => {
                         statusEl.textContent = '';
                     }, 2000);
                 } else {
-                    throw new Error(`Invalid price data - Silver: ${silverPrice}, Gold: ${goldPrice}`);
+                    throw new Error(`MetalINT returned invalid data - Silver: ${silverPrice}, Gold: ${goldPrice}`);
                 }
             } catch (error) {
                 console.error('Error fetching prices:', error);
