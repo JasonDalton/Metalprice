@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metal Prices Reference</title>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#0a0e27">
+    <meta name="description" content="Quick reference for silver and gold spot prices with fractional sizes and constitutional silver">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Metal Prices">
+    
+    <!-- Manifest -->
+    <link rel="manifest" href="manifest.json">
+    
+    <!-- Icons for iOS -->
+    <link rel="apple-touch-icon" href="web-app-manifest-192x192.png">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #0a0e27;
+            color: #e0e0e0;
+            line-height: 1.2;
+            padding: 4px;
+            font-size: 11px;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0;
+        }
+
+        .spot-prices {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 4px;
+            padding: 4px 6px;
+            background: #1a1f3a;
+            border-radius: 4px;
+        }
+
+        .spot-price {
+            flex: 1;
+            text-align: center;
+        }
+
+        .spot-price-label {
+            font-size: 9px;
+            color: #888;
+            margin-bottom: 2px;
+        }
+
+        .spot-price-value {
+            font-size: 16px;
+            font-weight: bold;
+            color: #ffd700;
+            line-height: 1.1;
+        }
+
+        .spot-price-time {
+            font-size: 8px;
+            color: #666;
+            margin-top: 2px;
+            line-height: 1.2;
+        }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 4px;
+            padding: 2px 4px;
+        }
+
+        .refresh-btn {
+            padding: 4px 8px;
+            background: #2a3f5f;
+            border: none;
+            border-radius: 3px;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 10px;
+        }
+
+        .refresh-btn:active {
+            background: #3a4f6f;
+        }
+
+        #refresh-status {
+            font-size: 9px;
+            color: #888;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 4px;
+        }
+
+        .tab {
+            padding: 4px 8px;
+            background: #1a1f3a;
+            border: 1px solid #2a3f5f;
+            border-radius: 3px 3px 0 0;
+            cursor: pointer;
+            color: #888;
+            font-size: 10px;
+            flex: 1;
+            text-align: center;
+        }
+
+        .tab.active {
+            background: #2a3f5f;
+            color: #ffd700;
+            border-bottom: 1px solid #2a3f5f;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .table-section {
+            margin-bottom: 6px;
+        }
+
+        .table-section h2 {
+            color: #ffd700;
+            margin-bottom: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 4px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #1a1f3a;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 4px;
+            font-size: 9px;
+        }
+
+        thead {
+            background: #2a3f5f;
+        }
+
+        th {
+            padding: 3px 4px;
+            text-align: center;
+            color: #ffd700;
+            font-weight: 600;
+            font-size: 8px;
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 3px 4px;
+            border-bottom: 1px solid #2a3f5f;
+            text-align: center;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:active {
+            background: #252a4a;
+        }
+
+        .price {
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+            font-size: 9px;
+        }
+
+        .price.negative {
+            color: #ff6b6b;
+        }
+
+        .price.positive {
+            color: #4ade80;
+        }
+
+        .price.melt {
+            color: #ffd700;
+            font-weight: 700;
+        }
+
+        .size {
+            color: #e0e0e0;
+            text-align: left;
+            font-size: 9px;
+        }
+
+        .error {
+            background: #4a1a1a;
+            color: #ff6b6b;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border: 1px solid #6b2a2a;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #888;
+        }
+
+        /* Mobile-first: already optimized */
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spot-prices">
+            <div class="spot-price">
+                <div class="spot-price-label">Ag</div>
+                <div class="spot-price-value" id="silver-spot">$--.--</div>
+                <div class="spot-price-time" id="silver-time">--:--</div>
+            </div>
+            <div class="spot-price">
+                <div class="spot-price-label">Au</div>
+                <div class="spot-price-value" id="gold-spot">$--.--</div>
+                <div class="spot-price-time" id="gold-time">--:--</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="refresh-btn" id="refresh-btn">Refresh Prices</button>
+            <div id="refresh-status"></div>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" data-tab="silver">Silver</div>
+            <div class="tab" data-tab="gold">Gold</div>
+        </div>
+
+        <!-- Silver Tab -->
+        <div class="tab-content active" id="silver-content">
+            <div class="table-section">
+                <h2>Ag - oz</h2>
+                <table id="silver-oz-table">
+                    <thead>
+                        <tr>
+                            <th>Size</th>
+                            <th>-10%</th>
+                            <th>-5%</th>
+                            <th>Melt</th>
+                            <th>+5%</th>
+                            <th>+10%</th>
+                        </tr>
+                    </thead>
+                    <tbody id="silver-oz-body"></tbody>
+                </table>
+            </div>
+
+            <div class="table-section">
+                <h2>Ag - g</h2>
+                <table id="silver-gram-table">
+                    <thead>
+                        <tr>
+                            <th>Size</th>
+                            <th>-10%</th>
+                            <th>-5%</th>
+                            <th>Melt</th>
+                            <th>+5%</th>
+                            <th>+10%</th>
+                        </tr>
+                    </thead>
+                    <tbody id="silver-gram-body"></tbody>
+                </table>
+            </div>
+
+            <div class="table-section">
+                <h2>90% Constitutional</h2>
+                <table id="constitutional-table">
+                    <thead>
+                        <tr>
+                            <th>Coin</th>
+                            <th>Face</th>
+                            <th>oz</th>
+                            <th>-10%</th>
+                            <th>-5%</th>
+                            <th>Melt</th>
+                            <th>+5%</th>
+                            <th>+10%</th>
+                        </tr>
+                    </thead>
+                    <tbody id="constitutional-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Gold Tab -->
+        <div class="tab-content" id="gold-content">
+            <div class="table-section">
+                <h2>Au - oz</h2>
+                <table id="gold-oz-table">
+                    <thead>
+                        <tr>
+                            <th>Size</th>
+                            <th>-10%</th>
+                            <th>-5%</th>
+                            <th>Melt</th>
+                            <th>+5%</th>
+                            <th>+10%</th>
+                        </tr>
+                    </thead>
+                    <tbody id="gold-oz-body"></tbody>
+                </table>
+            </div>
+
+            <div class="table-section">
+                <h2>Au - g</h2>
+                <table id="gold-gram-table">
+                    <thead>
+                        <tr>
+                            <th>Size</th>
+                            <th>-10%</th>
+                            <th>-5%</th>
+                            <th>Melt</th>
+                            <th>+5%</th>
+                            <th>+10%</th>
+                        </tr>
+                    </thead>
+                    <tbody id="gold-gram-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Constants
+        const TROY_OZ_TO_GRAM = 31.1035;
+        const CONSTITUTIONAL_SILVER_PER_DOLLAR = 0.715; // troy oz per $1 face value
+
+        // State
+        let silverSpot = 0;
+        let goldSpot = 0;
+        let lastUpdate = null;
+
+        // Silver sizes (troy oz)
+        const silverOzSizes = [
+            { label: '1/10 oz', value: 0.1 },
+            { label: '1/4 oz', value: 0.25 },
+            { label: '1/2 oz', value: 0.5 },
+            { label: '1 oz', value: 1 },
+            { label: '10 oz bar', value: 10 },
+            { label: '100 oz bar', value: 100 }
+        ];
+
+        // Silver gram sizes
+        const silverGramSizes = [
+            { label: '1 g', value: 1 },
+            { label: '2.5 g', value: 2.5 },
+            { label: '5 g', value: 5 },
+            { label: '10 g', value: 10 },
+            { label: '20 g', value: 20 },
+            { label: '31.1 g (1 oz)', value: 31.1035 },
+            { label: '50 g', value: 50 },
+            { label: '100 g', value: 100 }
+        ];
+
+        // Constitutional silver
+        const constitutionalSizes = [
+            { label: 'Dime', face: 0.10, oz: CONSTITUTIONAL_SILVER_PER_DOLLAR * 0.10 },
+            { label: 'Quarter', face: 0.25, oz: CONSTITUTIONAL_SILVER_PER_DOLLAR * 0.25 },
+            { label: 'Half Dollar', face: 0.50, oz: CONSTITUTIONAL_SILVER_PER_DOLLAR * 0.50 },
+            { label: 'Dollar', face: 1.00, oz: CONSTITUTIONAL_SILVER_PER_DOLLAR * 1.00 },
+            { label: '$1 Face Value', face: 1.00, oz: CONSTITUTIONAL_SILVER_PER_DOLLAR }
+        ];
+
+        // Gold sizes (troy oz)
+        const goldOzSizes = [
+            { label: '1/200 oz', value: 0.005 },
+            { label: '1/10 oz', value: 0.1 },
+            { label: '1/4 oz', value: 0.25 },
+            { label: '1/2 oz', value: 0.5 },
+            { label: '1 oz', value: 1 },
+            { label: '10 oz bar', value: 10 },
+            { label: '1 kg bar', value: 1000 / TROY_OZ_TO_GRAM }
+        ];
+
+        // Gold gram sizes
+        const goldGramSizes = [
+            { label: '1 g', value: 1 },
+            { label: '2.5 g', value: 2.5 },
+            { label: '5 g', value: 5 },
+            { label: '10 g', value: 10 },
+            { label: '20 g', value: 20 },
+            { label: '31.1 g (1 oz)', value: 31.1035 },
+            { label: '50 g', value: 50 },
+            { label: '100 g', value: 100 }
+        ];
+
+        // Format currency (compact for mobile)
+        function formatCurrency(value) {
+            if (value < 1) {
+                return '$' + value.toFixed(3);
+            } else if (value < 1000) {
+                return '$' + value.toFixed(2);
+            } else {
+                return '$' + value.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            }
+        }
+
+        // Format date and time (compact)
+        function formatDateTime(date) {
+            const today = new Date();
+            const isToday = date.toDateString() === today.toDateString();
+            
+            if (isToday) {
+                // Show just time if today
+                return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+            } else {
+                // Show date and time if not today
+                const dateStr = date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' });
+                const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+                return `${dateStr} ${timeStr}`;
+            }
+        }
+        
+        // Format full date and time for display
+        function formatFullDateTime(date) {
+            const dateStr = date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' });
+            const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+            return `${dateStr} ${timeStr}`;
+        }
+
+        // Calculate price with percentage adjustment
+        function applyPercentage(basePrice, percent) {
+            return basePrice * (1 + percent / 100);
+        }
+
+        // Update spot price displays
+        function updateSpotDisplays() {
+            // Only show prices if we have valid data (no fallback/zero values)
+            if (silverSpot > 0) {
+                document.getElementById('silver-spot').textContent = formatCurrency(silverSpot);
+            } else {
+                document.getElementById('silver-spot').textContent = 'N/A';
+            }
+            
+            if (goldSpot > 0) {
+                document.getElementById('gold-spot').textContent = formatCurrency(goldSpot);
+            } else {
+                document.getElementById('gold-spot').textContent = 'N/A';
+            }
+            
+            if (lastUpdate && silverSpot > 0 && goldSpot > 0) {
+                const dateTimeStr = formatFullDateTime(lastUpdate);
+                document.getElementById('silver-time').textContent = dateTimeStr;
+                document.getElementById('gold-time').textContent = dateTimeStr;
+            } else {
+                document.getElementById('silver-time').textContent = '--/-- --:--';
+                document.getElementById('gold-time').textContent = '--/-- --:--';
+            }
+        }
+
+
+        // Update silver troy oz table
+        function updateSilverOzTable() {
+            const tbody = document.getElementById('silver-oz-body');
+            tbody.innerHTML = '';
+            
+            // Only show data if we have valid spot price
+            if (silverSpot <= 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #888;">No price data available</td></tr>';
+                return;
+            }
+            
+            silverOzSizes.forEach(size => {
+                const meltValue = silverSpot * size.value;
+                const minus10 = applyPercentage(meltValue, -10);
+                const minus5 = applyPercentage(meltValue, -5);
+                const plus5 = applyPercentage(meltValue, 5);
+                const plus10 = applyPercentage(meltValue, 10);
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="size">${size.label}</td>
+                    <td class="price negative">${formatCurrency(minus10)}</td>
+                    <td class="price negative">${formatCurrency(minus5)}</td>
+                    <td class="price melt">${formatCurrency(meltValue)}</td>
+                    <td class="price positive">${formatCurrency(plus5)}</td>
+                    <td class="price positive">${formatCurrency(plus10)}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Update silver gram table
+        function updateSilverGramTable() {
+            const tbody = document.getElementById('silver-gram-body');
+            tbody.innerHTML = '';
+            
+            if (silverSpot <= 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #888;">No price data available</td></tr>';
+                return;
+            }
+            
+            silverGramSizes.forEach(size => {
+                // Convert grams to troy oz
+                const troyOz = size.value / TROY_OZ_TO_GRAM;
+                const meltValue = silverSpot * troyOz;
+                const minus10 = applyPercentage(meltValue, -10);
+                const minus5 = applyPercentage(meltValue, -5);
+                const plus5 = applyPercentage(meltValue, 5);
+                const plus10 = applyPercentage(meltValue, 10);
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="size">${size.label}</td>
+                    <td class="price negative">${formatCurrency(minus10)}</td>
+                    <td class="price negative">${formatCurrency(minus5)}</td>
+                    <td class="price melt">${formatCurrency(meltValue)}</td>
+                    <td class="price positive">${formatCurrency(plus5)}</td>
+                    <td class="price positive">${formatCurrency(plus10)}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Update constitutional table
+        function updateConstitutionalTable() {
+            const tbody = document.getElementById('constitutional-body');
+            tbody.innerHTML = '';
+            
+            if (silverSpot <= 0) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #888;">No price data available</td></tr>';
+                return;
+            }
+            
+            constitutionalSizes.forEach(item => {
+                const meltValue = silverSpot * item.oz;
+                const minus10 = applyPercentage(meltValue, -10);
+                const minus5 = applyPercentage(meltValue, -5);
+                const plus5 = applyPercentage(meltValue, 5);
+                const plus10 = applyPercentage(meltValue, 10);
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="size">${item.label}</td>
+                    <td>$${item.face.toFixed(2)}</td>
+                    <td>${item.oz.toFixed(3)}</td>
+                    <td class="price negative">${formatCurrency(minus10)}</td>
+                    <td class="price negative">${formatCurrency(minus5)}</td>
+                    <td class="price melt">${formatCurrency(meltValue)}</td>
+                    <td class="price positive">${formatCurrency(plus5)}</td>
+                    <td class="price positive">${formatCurrency(plus10)}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Update gold troy oz table
+        function updateGoldOzTable() {
+            const tbody = document.getElementById('gold-oz-body');
+            tbody.innerHTML = '';
+            
+            if (goldSpot <= 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #888;">No price data available</td></tr>';
+                return;
+            }
+            
+            goldOzSizes.forEach(size => {
+                const meltValue = goldSpot * size.value;
+                const minus10 = applyPercentage(meltValue, -10);
+                const minus5 = applyPercentage(meltValue, -5);
+                const plus5 = applyPercentage(meltValue, 5);
+                const plus10 = applyPercentage(meltValue, 10);
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="size">${size.label}</td>
+                    <td class="price negative">${formatCurrency(minus10)}</td>
+                    <td class="price negative">${formatCurrency(minus5)}</td>
+                    <td class="price melt">${formatCurrency(meltValue)}</td>
+                    <td class="price positive">${formatCurrency(plus5)}</td>
+                    <td class="price positive">${formatCurrency(plus10)}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Update gold gram table
+        function updateGoldGramTable() {
+            const tbody = document.getElementById('gold-gram-body');
+            tbody.innerHTML = '';
+            
+            if (goldSpot <= 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #888;">No price data available</td></tr>';
+                return;
+            }
+            
+            goldGramSizes.forEach(size => {
+                // Convert grams to troy oz
+                const troyOz = size.value / TROY_OZ_TO_GRAM;
+                const meltValue = goldSpot * troyOz;
+                const minus10 = applyPercentage(meltValue, -10);
+                const minus5 = applyPercentage(meltValue, -5);
+                const plus5 = applyPercentage(meltValue, 5);
+                const plus10 = applyPercentage(meltValue, 10);
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="size">${size.label}</td>
+                    <td class="price negative">${formatCurrency(minus10)}</td>
+                    <td class="price negative">${formatCurrency(minus5)}</td>
+                    <td class="price melt">${formatCurrency(meltValue)}</td>
+                    <td class="price positive">${formatCurrency(plus5)}</td>
+                    <td class="price positive">${formatCurrency(plus10)}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Update all tables
+        function updateAllTables() {
+            updateSilverOzTable();
+            updateSilverGramTable();
+            updateConstitutionalTable();
+            updateGoldOzTable();
+            updateGoldGramTable();
+        }
+
+        // Fetch prices from API
+        async function fetchPrices() {
+            const statusEl = document.getElementById('refresh-status');
+            statusEl.textContent = 'Refreshing...';
+            statusEl.style.color = '#888';
+
+            try {
+                let silverPrice = 0;
+                let goldPrice = 0;
+
+                // Use goldapi.io API with API key
+                const apiKey = 'goldapi-hplx19mitbzx73-io';
+                const headers = new Headers();
+                headers.append('x-access-token', apiKey);
+                headers.append('Content-Type', 'application/json');
+
+                const requestOptions = {
+                    method: 'GET',
+                    headers: headers,
+                    redirect: 'follow'
+                };
+
+                // Fetch both silver (XAG) and gold (XAU) prices in parallel
+                console.log('Fetching prices from goldapi.io...');
+                const [silverRes, goldRes] = await Promise.all([
+                    fetch('https://www.goldapi.io/api/XAG/USD', requestOptions),
+                    fetch('https://www.goldapi.io/api/XAU/USD', requestOptions)
+                ]);
+
+                // Parse silver response
+                if (silverRes.ok) {
+                    const silverData = await silverRes.json();
+                    console.log('Silver API response:', silverData);
+                    // goldapi.io returns price in the 'price' field
+                    if (silverData.price) {
+                        silverPrice = parseFloat(silverData.price);
+                    } else if (silverData.rate) {
+                        silverPrice = parseFloat(silverData.rate);
+                    }
+                } else {
+                    console.error('Silver API error:', silverRes.status, silverRes.statusText);
+                    const errorText = await silverRes.text();
+                    console.error('Error details:', errorText);
+                }
+
+                // Parse gold response
+                if (goldRes.ok) {
+                    const goldData = await goldRes.json();
+                    console.log('Gold API response:', goldData);
+                    if (goldData.price) {
+                        goldPrice = parseFloat(goldData.price);
+                    } else if (goldData.rate) {
+                        goldPrice = parseFloat(goldData.rate);
+                    }
+                } else {
+                    console.error('Gold API error:', goldRes.status, goldRes.statusText);
+                    const errorText = await goldRes.text();
+                    console.error('Error details:', errorText);
+                }
+
+                console.log('Final prices - Silver:', silverPrice, 'Gold:', goldPrice);
+
+                // NO FALLBACK PRICES - Only use real fetched data
+                // Final validation - must have valid prices from API
+                if (silverPrice > 0 && silverPrice < 100 && goldPrice > 0 && goldPrice < 10000) {
+                    silverSpot = silverPrice;
+                    goldSpot = goldPrice;
+                    lastUpdate = new Date();
+                    
+                    // Save to localStorage
+                    localStorage.setItem('silverSpot', silverSpot.toString());
+                    localStorage.setItem('goldSpot', goldSpot.toString());
+                    localStorage.setItem('lastUpdate', lastUpdate.toISOString());
+
+                    updateSpotDisplays();
+                    updateAllTables();
+                    
+                    statusEl.textContent = '✓ Updated';
+                    statusEl.style.color = '#4ade80';
+                    setTimeout(() => {
+                        statusEl.textContent = '';
+                    }, 2000);
+                } else {
+                    throw new Error(`Invalid price data - Silver: ${silverPrice}, Gold: ${goldPrice}`);
+                }
+            } catch (error) {
+                console.error('Error fetching prices:', error);
+                
+                // Only use cached data if it exists - NO FALLBACK PRICES
+                const cachedSilver = localStorage.getItem('silverSpot');
+                const cachedGold = localStorage.getItem('goldSpot');
+                const cachedTime = localStorage.getItem('lastUpdate');
+
+                if (cachedSilver && cachedGold && cachedTime) {
+                    // Only use cache if it's less than 24 hours old
+                    const cacheAge = Date.now() - new Date(cachedTime).getTime();
+                    if (cacheAge < 24 * 60 * 60 * 1000) {
+                        silverSpot = parseFloat(cachedSilver);
+                        goldSpot = parseFloat(cachedGold);
+                        lastUpdate = new Date(cachedTime);
+                        
+                        updateSpotDisplays();
+                        updateAllTables();
+                        
+                        statusEl.textContent = '⚠ Cached (stale)';
+                        statusEl.style.color = '#ffa500';
+                    } else {
+                        // Cache too old - don't use it
+                        statusEl.textContent = '✗ No current data';
+                        statusEl.style.color = '#ff6b6b';
+                        // Clear stale prices
+                        silverSpot = 0;
+                        goldSpot = 0;
+                        updateSpotDisplays();
+                        updateAllTables();
+                    }
+                } else {
+                    // No cache available - show error, no prices displayed
+                    statusEl.textContent = '✗ No data available';
+                    statusEl.style.color = '#ff6b6b';
+                    silverSpot = 0;
+                    goldSpot = 0;
+                    updateSpotDisplays();
+                    updateAllTables();
+                    console.error('Unable to fetch prices and no valid cache available.');
+                }
+            }
+        }
+
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const targetTab = tab.dataset.tab;
+                
+                // Update tab styles
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                // Update content visibility
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                document.getElementById(targetTab + '-content').classList.add('active');
+            });
+        });
+
+        // Refresh button
+        document.getElementById('refresh-btn').addEventListener('click', fetchPrices);
+
+        // Initialize tables on load (will show "No price data available" if no data)
+        updateAllTables();
+        
+        // Try to load from cache first
+        const cachedSilver = localStorage.getItem('silverSpot');
+        const cachedGold = localStorage.getItem('goldSpot');
+        const cachedTime = localStorage.getItem('lastUpdate');
+        
+        if (cachedSilver && cachedGold && cachedTime) {
+            const cacheAge = Date.now() - new Date(cachedTime).getTime();
+            if (cacheAge < 24 * 60 * 60 * 1000) {
+                silverSpot = parseFloat(cachedSilver);
+                goldSpot = parseFloat(cachedGold);
+                lastUpdate = new Date(cachedTime);
+                updateSpotDisplays();
+                updateAllTables();
+                document.getElementById('refresh-status').textContent = '⚠ Cached';
+                document.getElementById('refresh-status').style.color = '#ffa500';
+            }
+        }
+
+        // Register Service Worker for PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then((registration) => {
+                        console.log('Service Worker registered:', registration);
+                    })
+                    .catch((error) => {
+                        console.log('Service Worker registration failed:', error);
+                    });
+            });
+        }
+
+        // Initial load
+        fetchPrices();
+        
+        // Auto-refresh every 60 seconds
+        setInterval(fetchPrices, 60000);
+    </script>
+</body>
+</html>
+
