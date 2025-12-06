@@ -737,67 +737,22 @@
                 let goldPrice = 0;
                 let usedBackup = false;
 
-                // Try main API first (goldapi.io)
+                // Try main API first (MetalINT/metals.dev)
                 try {
-                    const apiKey = 'goldapi-hplx19mitbzx73-io';
-                    const headers = new Headers();
-                    headers.append('x-access-token', apiKey);
-                    headers.append('Content-Type', 'application/json');
-
-                    const requestOptions = {
-                        method: 'GET',
-                        headers: headers,
-                        redirect: 'follow'
-                    };
-
-                    // Fetch both silver (XAG) and gold (XAU) prices in parallel
-                    console.log('Fetching prices from goldapi.io...');
-                    const [silverRes, goldRes] = await Promise.all([
-                        fetch('https://www.goldapi.io/api/XAG/USD', requestOptions),
-                        fetch('https://www.goldapi.io/api/XAU/USD', requestOptions)
-                    ]);
-
-                    // Parse silver response
-                    if (silverRes.ok) {
-                        const silverData = await silverRes.json();
-                        console.log('Silver API response:', silverData);
-                        if (silverData.price) {
-                            silverPrice = parseFloat(silverData.price);
-                        } else if (silverData.rate) {
-                            silverPrice = parseFloat(silverData.rate);
-                        }
-                    } else {
-                        console.error('Silver API error:', silverRes.status, silverRes.statusText);
-                        if (silverRes.status === 403) {
-                            throw new Error('Main API quota exceeded, trying backup...');
-                        }
-                    }
-
-                    // Parse gold response
-                    if (goldRes.ok) {
-                        const goldData = await goldRes.json();
-                        console.log('Gold API response:', goldData);
-                        if (goldData.price) {
-                            goldPrice = parseFloat(goldData.price);
-                        } else if (goldData.rate) {
-                            goldPrice = parseFloat(goldData.rate);
-                        }
-                    } else {
-                        console.error('Gold API error:', goldRes.status, goldRes.statusText);
-                        if (goldRes.status === 403) {
-                            throw new Error('Main API quota exceeded, trying backup...');
-                        }
-                    }
-
+                    console.log('Fetching prices from MetalINT...');
+                    const mainData = await fetchPricesFromMetalINT();
+                    silverPrice = mainData.silverPrice;
+                    goldPrice = mainData.goldPrice;
+                    
                     // Check if we got valid data from main API
                     if (silverPrice > 0 && goldPrice > 0) {
-                        console.log('Successfully fetched from main API');
+                        console.log('Successfully fetched from MetalINT');
                     } else {
-                        throw new Error('Main API returned invalid data, trying backup...');
+                        throw new Error('MetalINT returned invalid data, trying backup...');
                     }
                 } catch (mainApiError) {
                     // Main API failed, try backup
-                    console.log('Main API failed, trying backup API...', mainApiError);
+                    console.log('MetalINT failed, trying backup API...', mainApiError);
                     statusEl.textContent = 'Trying backup API...';
                     
                     const backupData = await fetchPricesFromBackup();
@@ -823,7 +778,7 @@
                     updateAllTables();
                     
                     if (usedBackup) {
-                        statusEl.textContent = '✓ Updated (backup API)';
+                        statusEl.textContent = '✓ Updated (backup)';
                         statusEl.style.color = '#ffa500';
                     } else {
                         statusEl.textContent = '✓ Updated';

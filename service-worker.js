@@ -29,7 +29,7 @@ self.addEventListener('install', (event) => {
 // Fetch event - serve from cache, fallback to network
 self.addEventListener('fetch', (event) => {
   // Skip caching for external API requests - always fetch fresh data
-  if (event.request.url.includes('goldapi.io')) {
+  if (event.request.url.includes('goldapi.io') || event.request.url.includes('metals.dev')) {
     return fetch(event.request);
   }
   
