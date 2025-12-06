@@ -2,7 +2,7 @@
   "name": "Metal Prices Reference",
   "short_name": "Metal Prices",
   "description": "Quick reference for silver and gold spot prices with fractional sizes and constitutional silver",
-  "start_url": "/",
+  "start_url": "/Metalprice/",
   "display": "standalone",
   "background_color": "#0a0e27",
   "theme_color": "#0a0e27",
