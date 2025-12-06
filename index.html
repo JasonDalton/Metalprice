@@ -639,8 +639,8 @@
             updateGoldGramTable();
         }
 
-        // Fetch prices from backup API (metals.dev)
-        async function fetchPricesFromBackup() {
+        // Fetch prices from MetalINT (metals.dev) - primary API
+        async function fetchPricesFromMetalINT() {
             const url = 'https://api.metals.dev/v1/latest?api_key=QRJDF0IFCBRQLOPNVDB8701PNVDB8&currency=USD&unit=toz';
             
             const response = await fetch(url, {
@@ -650,11 +650,11 @@
             });
 
             if (!response.ok) {
-                throw new Error(`Backup API error: ${response.status}`);
+                throw new Error(`MetalINT API error: ${response.status}`);
             }
 
             const result = await response.json();
-            console.log('Backup API response:', result);
+            console.log('MetalINT API response:', result);
             
             // Parse metals.dev response format
             let silverPrice = 0;
@@ -674,6 +674,55 @@
                 goldPrice = parseFloat(result.XAU);
             }
             
+            return { silverPrice, goldPrice };
+        }
+
+        // Fetch prices from backup API (goldapi.io)
+        async function fetchPricesFromBackup() {
+            const apiKey = 'goldapi-hplx19mitbzx73-io';
+            const headers = new Headers();
+            headers.append('x-access-token', apiKey);
+            headers.append('Content-Type', 'application/json');
+
+            const requestOptions = {
+                method: 'GET',
+                headers: headers,
+                redirect: 'follow'
+            };
+
+            // Fetch both silver (XAG) and gold (XAU) prices in parallel
+            const [silverRes, goldRes] = await Promise.all([
+                fetch('https://www.goldapi.io/api/XAG/USD', requestOptions),
+                fetch('https://www.goldapi.io/api/XAU/USD', requestOptions)
+            ]);
+
+            let silverPrice = 0;
+            let goldPrice = 0;
+
+            // Parse silver response
+            if (silverRes.ok) {
+                const silverData = await silverRes.json();
+                if (silverData.price) {
+                    silverPrice = parseFloat(silverData.price);
+                } else if (silverData.rate) {
+                    silverPrice = parseFloat(silverData.rate);
+                }
+            } else {
+                throw new Error(`Backup API silver error: ${silverRes.status}`);
+            }
+
+            // Parse gold response
+            if (goldRes.ok) {
+                const goldData = await goldRes.json();
+                if (goldData.price) {
+                    goldPrice = parseFloat(goldData.price);
+                } else if (goldData.rate) {
+                    goldPrice = parseFloat(goldData.rate);
+                }
+            } else {
+                throw new Error(`Backup API gold error: ${goldRes.status}`);
+            }
+
             return { silverPrice, goldPrice };
         }
 
