@@ -3,11 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Metal Prices Reference</title>
     
     <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#0a0e27">
     <meta name="description" content="Quick reference for silver and gold spot prices with fractional sizes and constitutional silver">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Metal Prices">
@@ -345,6 +349,20 @@
     </div>
 
     <script>
+        // Force cache clear on load - remove old cached versions
+        (function() {
+            if ('caches' in window) {
+                caches.keys().then(function(names) {
+                    for (let name of names) {
+                        if (name.includes('metal-prices')) {
+                            caches.delete(name);
+                            console.log('Deleted cache:', name);
+                        }
+                    }
+                });
+            }
+        })();
+        
         // Constants
         const TROY_OZ_TO_GRAM = 31.1035;
         const CONSTITUTIONAL_SILVER_PER_DOLLAR = 0.715; // troy oz per $1 face value
@@ -643,22 +661,82 @@
 
         // Fetch and parse prices from APMEX header ticker
         async function fetchPricesFromAPMEX() {
-            // Use CORS proxy to bypass CORS restrictions
-            const proxyUrl = 'https://api.allorigins.win/raw?url=';
             const apmexUrl = 'https://www.apmex.com/silver-price';
-            const url = proxyUrl + encodeURIComponent(apmexUrl);
             
-            const response = await fetch(url, {
-                headers: {
-                    'Accept': 'text/html',
-                },
-            });
+            // Try direct fetch first (may be blocked by CORS)
+            try {
+                console.log('Attempting direct fetch from APMEX...');
+                const response = await fetch(apmexUrl, {
+                    headers: {
+                        'Accept': 'text/html',
+                    },
+                    mode: 'cors',
+                });
 
-            if (!response.ok) {
-                throw new Error(`APMEX fetch error: ${response.status}`);
+                if (!response.ok) {
+                    throw new Error(`APMEX fetch error: ${response.status}`);
+                }
+
+                const html = await response.text();
+                console.log('Successfully fetched directly from APMEX');
+                return parseAPMEXHTML(html);
+            } catch (error) {
+                // If CORS blocks it, try with proxy
+                if (error.message.includes('CORS') || error.message.includes('Failed to fetch')) {
+                    console.log('Direct fetch blocked by CORS, trying proxy...');
+                    return fetchPricesFromAPMEXWithProxy(apmexUrl);
+                }
+                throw error;
             }
+        }
+        
+        // Fallback: Fetch via CORS proxy
+        async function fetchPricesFromAPMEXWithProxy(apmexUrl) {
+            // Try multiple CORS proxies as fallbacks
+            const proxies = [
+                'https://api.allorigins.win/raw?url=',
+                'https://corsproxy.io/?',
+                'https://api.codetabs.com/v1/proxy?quest=',
+            ];
+            
+            let html = null;
+            let lastError = null;
+            
+            for (const proxyUrl of proxies) {
+                try {
+                    const url = proxyUrl + encodeURIComponent(apmexUrl);
+                    console.log('Trying proxy:', proxyUrl);
+                    
+                    const response = await fetch(url, {
+                        headers: {
+                            'Accept': 'text/html',
+                        },
+                        mode: 'cors',
+                    });
 
-            const html = await response.text();
+                    if (!response.ok) {
+                        throw new Error(`Proxy error: ${response.status}`);
+                    }
+
+                    html = await response.text();
+                    console.log('Successfully fetched via proxy:', proxyUrl);
+                    break; // Success, exit loop
+                } catch (error) {
+                    console.log('Proxy failed:', proxyUrl, error.message);
+                    lastError = error;
+                    continue; // Try next proxy
+                }
+            }
+            
+            if (!html) {
+                throw new Error(`All CORS proxies failed. Last error: ${lastError?.message || 'Unknown'}`);
+            }
+            
+            return parseAPMEXHTML(html);
+        }
+        
+        // Parse HTML to extract prices
+        function parseAPMEXHTML(html) {
             console.log('APMEX HTML fetched, length:', html.length);
             
             // Parse HTML to extract prices from header ticker
