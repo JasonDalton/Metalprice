@@ -1,5 +1,5 @@
 // Service Worker for Metal Prices PWA
-const CACHE_NAME = 'metal-prices-v2';
+const CACHE_NAME = 'metal-prices-v3';
 
 // Get the base path from the service worker's scope
 const getBasePath = () => {
@@ -28,22 +28,30 @@ self.addEventListener('install', (event) => {
 
 // Fetch event - serve from cache, fallback to network
 self.addEventListener('fetch', (event) => {
-  // Skip caching for external API requests - always fetch fresh data
-  if (event.request.url.includes('metals.dev')) {
+  // Skip caching for external requests (APMEX, CORS proxies) - always fetch fresh data
+  if (event.request.url.includes('apmex.com') || event.request.url.includes('allorigins.win')) {
     return fetch(event.request);
   }
   
-  // For local assets, use cache first, then network
+  // For local assets, use network first to get latest version, then cache
   event.respondWith(
-    caches.match(event.request)
+    fetch(event.request)
       .then((response) => {
-        // Return cached version or fetch from network
-        return response || fetch(event.request);
+        // Cache the response for future use
+        const responseToCache = response.clone();
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(event.request, responseToCache);
+        });
+        return response;
+      })
+      .catch(() => {
+        // If network fails, try cache
+        return caches.match(event.request);
       })
   );
 });
 
-// Activate event - clean up old caches
+// Activate event - clean up old caches and skip waiting
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -55,7 +63,17 @@ self.addEventListener('activate', (event) => {
           }
         })
       );
+    }).then(() => {
+      // Take control of all pages immediately
+      return self.clients.claim();
     })
   );
+});
+
+// Listen for skip waiting message
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
