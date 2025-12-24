@@ -353,6 +353,8 @@
         let silverSpot = 0;
         let goldSpot = 0;
         let lastUpdate = null;
+        let lastFetchTime = 0;
+        const MIN_FETCH_INTERVAL = 30 * 1000; // 30 seconds minimum between API calls
 
         // Silver sizes (troy oz)
         const silverOzSizes = [
@@ -639,67 +641,152 @@
             updateGoldGramTable();
         }
 
-        // Fetch prices from MetalINT (metals.dev) - primary API
-        async function fetchPricesFromMetalINT() {
-            const url = 'https://api.metals.dev/v1/latest?api_key=QRJDF0IFCBRQLOPNVDB8701PNVDB8&currency=USD&unit=toz';
+        // Fetch and parse prices from APMEX header ticker
+        async function fetchPricesFromAPMEX() {
+            // Use CORS proxy to bypass CORS restrictions
+            const proxyUrl = 'https://api.allorigins.win/raw?url=';
+            const apmexUrl = 'https://www.apmex.com/silver-price';
+            const url = proxyUrl + encodeURIComponent(apmexUrl);
             
             const response = await fetch(url, {
                 headers: {
-                    'Accept': 'application/json',
+                    'Accept': 'text/html',
                 },
             });
 
             if (!response.ok) {
-                throw new Error(`MetalINT API error: ${response.status}`);
+                throw new Error(`APMEX fetch error: ${response.status}`);
             }
 
-            const result = await response.json();
-            console.log('MetalINT API response:', result);
+            const html = await response.text();
+            console.log('APMEX HTML fetched, length:', html.length);
             
-            // Parse metals.dev response format
-            // metals.dev returns: { metals: { gold: 1929.15, silver: 22.99, ... }, ... }
+            // Parse HTML to extract prices from header ticker
+            // APMEX typically has prices in the header/nav area
             let silverPrice = 0;
             let goldPrice = 0;
             
-            if (result.metals) {
-                // metals.dev uses 'silver' and 'gold' (not XAG/XAU)
-                if (result.metals.silver !== undefined && result.metals.silver !== null) {
-                    silverPrice = parseFloat(result.metals.silver);
-                }
-                if (result.metals.gold !== undefined && result.metals.gold !== null) {
-                    goldPrice = parseFloat(result.metals.gold);
+            // Try multiple parsing strategies for the ticker
+            // Strategy 1: Look for price patterns in common ticker structures
+            // Pattern: $XX.XX format for prices
+            const pricePattern = /\$(\d+\.\d{2})/g;
+            const prices = [];
+            let match;
+            while ((match = pricePattern.exec(html)) !== null) {
+                const price = parseFloat(match[1]);
+                // Filter reasonable price ranges
+                if (price > 10 && price < 100) {
+                    prices.push(price);
+                } else if (price > 1000 && price < 10000) {
+                    prices.push(price);
                 }
             }
             
-            console.log('Parsed prices - Silver:', silverPrice, 'Gold:', goldPrice);
-            console.log('Raw metals object:', result.metals);
+            // Strategy 2: Look for specific silver/gold indicators in the HTML
+            // Search for "silver" and "gold" keywords near price values
+            const silverMatches = html.match(/silver[^$]*\$(\d+\.\d{2})/i);
+            const goldMatches = html.match(/gold[^$]*\$(\d+\.\d{2})/i);
+            
+            if (silverMatches && silverMatches[1]) {
+                silverPrice = parseFloat(silverMatches[1]);
+            }
+            if (goldMatches && goldMatches[1]) {
+                goldPrice = parseFloat(goldMatches[1]);
+            }
+            
+            // Strategy 3: Look for data attributes or specific class names
+            // Common patterns: data-price, data-silver-price, data-gold-price
+            const dataSilverMatch = html.match(/data-silver-price=["'](\d+\.\d{2})["']/i) || 
+                                   html.match(/data-price-silver=["'](\d+\.\d{2})["']/i);
+            const dataGoldMatch = html.match(/data-gold-price=["'](\d+\.\d{2})["']/i) || 
+                                 html.match(/data-price-gold=["'](\d+\.\d{2})["']/i);
+            
+            if (dataSilverMatch && dataSilverMatch[1]) {
+                silverPrice = parseFloat(dataSilverMatch[1]);
+            }
+            if (dataGoldMatch && dataGoldMatch[1]) {
+                goldPrice = parseFloat(dataGoldMatch[1]);
+            }
+            
+            // Strategy 4: Parse from JSON data embedded in the page
+            const jsonMatch = html.match(/<script[^>]*>[\s\S]*?({[^}]*"silver"[^}]*"gold"[^}]*})[\s\S]*?<\/script>/i);
+            if (jsonMatch) {
+                try {
+                    const data = JSON.parse(jsonMatch[1]);
+                    if (data.silver && !silverPrice) silverPrice = parseFloat(data.silver);
+                    if (data.gold && !goldPrice) goldPrice = parseFloat(data.gold);
+                } catch (e) {
+                    console.log('JSON parse failed:', e);
+                }
+            }
+            
+            // Strategy 5: Look for specific ticker/header structures
+            // Common class names: ticker, price-ticker, spot-price, etc.
+            const tickerMatch = html.match(/<[^>]*class="[^"]*ticker[^"]*"[^>]*>[\s\S]{0,2000}?silver[^$]*\$(\d+\.\d{2})[\s\S]{0,2000}?gold[^$]*\$(\d+\.\d{2})/i);
+            if (tickerMatch) {
+                if (!silverPrice && tickerMatch[1]) silverPrice = parseFloat(tickerMatch[1]);
+                if (!goldPrice && tickerMatch[2]) goldPrice = parseFloat(tickerMatch[2]);
+            }
+            
+            // Fallback: If we found prices but not specifically silver/gold, use reasonable ranges
+            if (prices.length >= 2 && (!silverPrice || !goldPrice)) {
+                prices.sort((a, b) => a - b);
+                // Silver is typically 15-50, gold is typically 1500-3000
+                for (const price of prices) {
+                    if (!silverPrice && price > 10 && price < 100) {
+                        silverPrice = price;
+                    } else if (!goldPrice && price > 1000 && price < 10000) {
+                        goldPrice = price;
+                    }
+                }
+            }
+            
+            console.log('Parsed prices from APMEX - Silver:', silverPrice, 'Gold:', goldPrice);
             
             if (isNaN(silverPrice) || isNaN(goldPrice) || silverPrice <= 0 || goldPrice <= 0) {
-                console.error('Failed to parse prices. Silver:', silverPrice, 'Gold:', goldPrice);
-                console.error('Full response:', result);
-                throw new Error(`Failed to parse prices from API response. Silver: ${silverPrice}, Gold: ${goldPrice}`);
+                console.error('Failed to parse prices from APMEX. Silver:', silverPrice, 'Gold:', goldPrice);
+                // Log a snippet of the HTML for debugging
+                const snippet = html.substring(0, 5000);
+                console.error('HTML snippet:', snippet);
+                throw new Error(`Failed to parse prices from APMEX. Silver: ${silverPrice}, Gold: ${goldPrice}`);
             }
             
             return { silverPrice, goldPrice };
         }
 
 
-        // Fetch prices from API
-        async function fetchPrices() {
+        // Fetch prices from APMEX website
+        async function fetchPrices(forceRefresh = false) {
             const statusEl = document.getElementById('refresh-status');
+            
+            // Rate limiting - prevent excessive requests
+            const now = Date.now();
+            const timeSinceLastFetch = now - lastFetchTime;
+            
+            if (!forceRefresh && timeSinceLastFetch < MIN_FETCH_INTERVAL && lastFetchTime > 0) {
+                console.log('Skipping fetch - too soon since last fetch. Wait', Math.ceil((MIN_FETCH_INTERVAL - timeSinceLastFetch) / 1000), 'seconds');
+                statusEl.textContent = '⏱ Wait ' + Math.ceil((MIN_FETCH_INTERVAL - timeSinceLastFetch) / 1000) + 's';
+                statusEl.style.color = '#ffa500';
+                setTimeout(() => {
+                    statusEl.textContent = '';
+                }, 2000);
+                return;
+            }
+            
             statusEl.textContent = 'Refreshing...';
             statusEl.style.color = '#888';
+            lastFetchTime = now;
 
             try {
-                // Fetch from MetalINT only
-                console.log('Fetching prices from MetalINT...');
-                const data = await fetchPricesFromMetalINT();
+                // Fetch from APMEX header ticker
+                console.log('Fetching prices from APMEX...');
+                const data = await fetchPricesFromAPMEX();
                 const silverPrice = data.silverPrice;
                 const goldPrice = data.goldPrice;
                 
                 // Validate data (silver typically 15-50, gold typically 1500-3000, but allow wider range)
                 if (silverPrice > 0 && silverPrice < 200 && goldPrice > 0 && goldPrice < 50000) {
-                    console.log('Successfully fetched from MetalINT - Silver:', silverPrice, 'Gold:', goldPrice);
+                    console.log('Successfully fetched from APMEX - Silver:', silverPrice, 'Gold:', goldPrice);
                     
                     silverSpot = silverPrice;
                     goldSpot = goldPrice;
@@ -719,7 +806,7 @@
                         statusEl.textContent = '';
                     }, 2000);
                 } else {
-                    throw new Error(`MetalINT returned invalid data - Silver: ${silverPrice}, Gold: ${goldPrice}`);
+                    throw new Error(`APMEX returned invalid data - Silver: ${silverPrice}, Gold: ${goldPrice}`);
                 }
             } catch (error) {
                 console.error('Error fetching prices:', error);
@@ -800,8 +887,8 @@
             });
         });
 
-        // Refresh button
-        document.getElementById('refresh-btn').addEventListener('click', fetchPrices);
+        // Refresh button - force refresh even if rate limited
+        document.getElementById('refresh-btn').addEventListener('click', () => fetchPrices(true));
 
         // Initialize tables on load (will show "No price data available" if no data)
         updateAllTables();
