@@ -659,14 +659,14 @@
             updateGoldGramTable();
         }
 
-        // Fetch and parse prices from APMEX header ticker
+        // Fetch and parse prices from APMEX widget
         async function fetchPricesFromAPMEX() {
-            const apmexUrl = 'https://www.apmex.com/silver-price';
+            // Use the APMEX widget URL which should be simpler and not blocked
+            const widgetUrl = 'https://widgets.apmex.com/widget/spotprice/?w=280&h=180&mtls=GS&arf=False&rint=5&srf=False&tId=1&wId=1';
             
-            // Try direct fetch first (may be blocked by CORS)
             try {
-                console.log('Attempting direct fetch from APMEX...');
-                const response = await fetch(apmexUrl, {
+                console.log('Fetching prices from APMEX widget...');
+                const response = await fetch(widgetUrl, {
                     headers: {
                         'Accept': 'text/html',
                     },
@@ -674,24 +674,24 @@
                 });
 
                 if (!response.ok) {
-                    throw new Error(`APMEX fetch error: ${response.status}`);
+                    throw new Error(`APMEX widget fetch error: ${response.status}`);
                 }
 
                 const html = await response.text();
-                console.log('Successfully fetched directly from APMEX');
+                console.log('Successfully fetched from APMEX widget');
                 return parseAPMEXHTML(html);
             } catch (error) {
                 // If CORS blocks it, try with proxy
                 if (error.message.includes('CORS') || error.message.includes('Failed to fetch')) {
                     console.log('Direct fetch blocked by CORS, trying proxy...');
-                    return fetchPricesFromAPMEXWithProxy(apmexUrl);
+                    return fetchPricesFromAPMEXWithProxy(widgetUrl);
                 }
                 throw error;
             }
         }
         
         // Fallback: Fetch via CORS proxy
-        async function fetchPricesFromAPMEXWithProxy(apmexUrl) {
+        async function fetchPricesFromAPMEXWithProxy(widgetUrl) {
             // Try multiple CORS proxies as fallbacks
             const proxies = [
                 'https://api.allorigins.win/raw?url=',
@@ -704,7 +704,7 @@
             
             for (const proxyUrl of proxies) {
                 try {
-                    const url = proxyUrl + encodeURIComponent(apmexUrl);
+                    const url = proxyUrl + encodeURIComponent(widgetUrl);
                     console.log('Trying proxy:', proxyUrl);
                     
                     const response = await fetch(url, {
@@ -735,49 +735,49 @@
             return parseAPMEXHTML(html);
         }
         
-        // Parse HTML to extract prices
+        // Parse HTML to extract prices from APMEX widget
         function parseAPMEXHTML(html) {
             console.log('APMEX HTML fetched, length:', html.length);
             
-            // Parse HTML to extract prices from header ticker
-            // APMEX typically has prices in the header/nav area
             let silverPrice = 0;
             let goldPrice = 0;
             
-            // Try multiple parsing strategies for the ticker
-            // Strategy 1: Look for price patterns in common ticker structures
-            // Pattern: $XX.XX format for prices
-            const pricePattern = /\$(\d+\.\d{2})/g;
-            const prices = [];
-            let match;
-            while ((match = pricePattern.exec(html)) !== null) {
-                const price = parseFloat(match[1]);
-                // Filter reasonable price ranges
-                if (price > 10 && price < 100) {
-                    prices.push(price);
-                } else if (price > 1000 && price < 10000) {
-                    prices.push(price);
+            // Strategy 1: Look for JSON data in script tags (widgets often use this)
+            const jsonMatches = html.match(/<script[^>]*>([\s\S]*?)<\/script>/gi);
+            if (jsonMatches) {
+                for (const script of jsonMatches) {
+                    // Try to find JSON objects with price data
+                    const jsonObjMatch = script.match(/{[^{}]*"(?:silver|gold|ag|au|price|spot)[^{}]*}/i);
+                    if (jsonObjMatch) {
+                        try {
+                            const data = JSON.parse(jsonObjMatch[0]);
+                            // Check various possible property names
+                            if (data.silver || data.ag || data.Silver || data.AG) {
+                                silverPrice = parseFloat(data.silver || data.ag || data.Silver || data.AG);
+                            }
+                            if (data.gold || data.au || data.Gold || data.AU) {
+                                goldPrice = parseFloat(data.gold || data.au || data.Gold || data.AU);
+                            }
+                        } catch (e) {
+                            // Try a more flexible JSON extraction
+                            const silverMatch = script.match(/"silver"\s*:\s*"?(\d+\.\d{2})"?/i) || 
+                                              script.match(/"ag"\s*:\s*"?(\d+\.\d{2})"?/i);
+                            const goldMatch = script.match(/"gold"\s*:\s*"?(\d+\.\d{2})"?/i) || 
+                                            script.match(/"au"\s*:\s*"?(\d+\.\d{2})"?/i);
+                            if (silverMatch && silverMatch[1]) silverPrice = parseFloat(silverMatch[1]);
+                            if (goldMatch && goldMatch[1]) goldPrice = parseFloat(goldMatch[1]);
+                        }
+                    }
                 }
             }
             
-            // Strategy 2: Look for specific silver/gold indicators in the HTML
-            // Search for "silver" and "gold" keywords near price values
-            const silverMatches = html.match(/silver[^$]*\$(\d+\.\d{2})/i);
-            const goldMatches = html.match(/gold[^$]*\$(\d+\.\d{2})/i);
-            
-            if (silverMatches && silverMatches[1]) {
-                silverPrice = parseFloat(silverMatches[1]);
-            }
-            if (goldMatches && goldMatches[1]) {
-                goldPrice = parseFloat(goldMatches[1]);
-            }
-            
-            // Strategy 3: Look for data attributes or specific class names
-            // Common patterns: data-price, data-silver-price, data-gold-price
+            // Strategy 2: Look for data attributes
             const dataSilverMatch = html.match(/data-silver-price=["'](\d+\.\d{2})["']/i) || 
-                                   html.match(/data-price-silver=["'](\d+\.\d{2})["']/i);
+                                   html.match(/data-price-silver=["'](\d+\.\d{2})["']/i) ||
+                                   html.match(/data-ag=["'](\d+\.\d{2})["']/i);
             const dataGoldMatch = html.match(/data-gold-price=["'](\d+\.\d{2})["']/i) || 
-                                 html.match(/data-price-gold=["'](\d+\.\d{2})["']/i);
+                                 html.match(/data-price-gold=["'](\d+\.\d{2})["']/i) ||
+                                 html.match(/data-au=["'](\d+\.\d{2})["']/i);
             
             if (dataSilverMatch && dataSilverMatch[1]) {
                 silverPrice = parseFloat(dataSilverMatch[1]);
@@ -786,36 +786,68 @@
                 goldPrice = parseFloat(dataGoldMatch[1]);
             }
             
-            // Strategy 4: Parse from JSON data embedded in the page
-            const jsonMatch = html.match(/<script[^>]*>[\s\S]*?({[^}]*"silver"[^}]*"gold"[^}]*})[\s\S]*?<\/script>/i);
-            if (jsonMatch) {
-                try {
-                    const data = JSON.parse(jsonMatch[1]);
-                    if (data.silver && !silverPrice) silverPrice = parseFloat(data.silver);
-                    if (data.gold && !goldPrice) goldPrice = parseFloat(data.gold);
-                } catch (e) {
-                    console.log('JSON parse failed:', e);
+            // Strategy 3: Look for "Silver" or "Gold" text followed by price
+            // More flexible pattern that handles various HTML structures
+            const silverPatterns = [
+                /(?:silver|ag)\s*[:\s]*\$?(\d+\.\d{2})/i,
+                /(?:silver|ag).*?(\d+\.\d{2}).*?(?:oz|troy)/i,
+            ];
+            const goldPatterns = [
+                /(?:gold|au)\s*[:\s]*\$?(\d+\.\d{2})/i,
+                /(?:gold|au).*?(\d+\.\d{2}).*?(?:oz|troy)/i,
+            ];
+            
+            for (const pattern of silverPatterns) {
+                const match = html.match(pattern);
+                if (match && match[1]) {
+                    const price = parseFloat(match[1]);
+                    if (price > 10 && price < 100 && !silverPrice) {
+                        silverPrice = price;
+                        break;
+                    }
                 }
             }
             
-            // Strategy 5: Look for specific ticker/header structures
-            // Common class names: ticker, price-ticker, spot-price, etc.
-            const tickerMatch = html.match(/<[^>]*class="[^"]*ticker[^"]*"[^>]*>[\s\S]{0,2000}?silver[^$]*\$(\d+\.\d{2})[\s\S]{0,2000}?gold[^$]*\$(\d+\.\d{2})/i);
-            if (tickerMatch) {
-                if (!silverPrice && tickerMatch[1]) silverPrice = parseFloat(tickerMatch[1]);
-                if (!goldPrice && tickerMatch[2]) goldPrice = parseFloat(tickerMatch[2]);
+            for (const pattern of goldPatterns) {
+                const match = html.match(pattern);
+                if (match && match[1]) {
+                    const price = parseFloat(match[1]);
+                    if (price > 1000 && price < 10000 && !goldPrice) {
+                        goldPrice = price;
+                        break;
+                    }
+                }
             }
             
-            // Fallback: If we found prices but not specifically silver/gold, use reasonable ranges
-            if (prices.length >= 2 && (!silverPrice || !goldPrice)) {
-                prices.sort((a, b) => a - b);
-                // Silver is typically 15-50, gold is typically 1500-3000
-                for (const price of prices) {
-                    if (!silverPrice && price > 10 && price < 100) {
-                        silverPrice = price;
-                    } else if (!goldPrice && price > 1000 && price < 10000) {
-                        goldPrice = price;
-                    }
+            // Strategy 4: Extract all prices and use reasonable ranges
+            const pricePattern = /\$(\d+\.\d{2})/g;
+            const prices = [];
+            let match;
+            while ((match = pricePattern.exec(html)) !== null) {
+                const price = parseFloat(match[1]);
+                if (price > 10 && price < 100) {
+                    prices.push({price, type: 'silver'});
+                } else if (price > 1000 && price < 10000) {
+                    prices.push({price, type: 'gold'});
+                }
+            }
+            
+            // If we found prices but not specifically identified, use the first of each range
+            if (!silverPrice && prices.some(p => p.type === 'silver')) {
+                silverPrice = prices.find(p => p.type === 'silver').price;
+            }
+            if (!goldPrice && prices.some(p => p.type === 'gold')) {
+                goldPrice = prices.find(p => p.type === 'gold').price;
+            }
+            
+            // Fallback: If we have exactly 2 prices in reasonable ranges, assign them
+            if (prices.length === 2 && (!silverPrice || !goldPrice)) {
+                prices.sort((a, b) => a.price - b.price);
+                if (!silverPrice && prices[0].price > 10 && prices[0].price < 100) {
+                    silverPrice = prices[0].price;
+                }
+                if (!goldPrice && prices[1].price > 1000 && prices[1].price < 10000) {
+                    goldPrice = prices[1].price;
                 }
             }
             
