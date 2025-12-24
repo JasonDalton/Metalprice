@@ -308,6 +308,19 @@
                     <tbody id="constitutional-body"></tbody>
                 </table>
             </div>
+
+            <div class="table-section">
+                <h2>Gold/Silver Ratio</h2>
+                <table id="ratio-table">
+                    <thead>
+                        <tr>
+                            <th>Ratio</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ratio-body"></tbody>
+                </table>
+            </div>
         </div>
 
         <!-- Gold Tab -->
@@ -650,6 +663,26 @@
             });
         }
 
+        // Update gold/silver ratio table
+        function updateRatioTable() {
+            const tbody = document.getElementById('ratio-body');
+            tbody.innerHTML = '';
+            
+            if (silverSpot <= 0 || goldSpot <= 0) {
+                tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; color: #888;">No price data available</td></tr>';
+                return;
+            }
+            
+            const ratio = goldSpot / silverSpot;
+            
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td class="size">Au/Ag</td>
+                <td class="price melt">${ratio.toFixed(2)}</td>
+            `;
+            tbody.appendChild(row);
+        }
+
         // Update all tables
         function updateAllTables() {
             updateSilverOzTable();
@@ -657,6 +690,7 @@
             updateConstitutionalTable();
             updateGoldOzTable();
             updateGoldGramTable();
+            updateRatioTable();
         }
 
         // Fetch prices from Lambda API endpoint
